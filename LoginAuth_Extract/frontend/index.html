@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Login</h1>
+      <p class="hint">Demo frontend for JWT login flow</p>
+
+      <form id="loginForm" class="card">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" required />
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required />
+
+        <button type="submit">Login</button>
+      </form>
+
+      <p id="message" class="message"></p>
+    </main>
+
+    <script src="./login.js"></script>
+  </body>
+  </html>
