@@ -18,15 +18,6 @@ class ApiResponse {
       },
     };
   }
-
-  static paginated(data, pagination) {
-    return {
-      success: true,
-      message: 'Success',
-      data,
-      meta: { pagination },
-    };
-  }
 }
 
 module.exports = { ApiResponse };

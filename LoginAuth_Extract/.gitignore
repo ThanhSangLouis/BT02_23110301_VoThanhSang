@@ -1,0 +1,27 @@
+# Node.js dependencies
+node_modules/
+# Environment files (do not commit secrets)
+.env*
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+# Build output (frontend)
+frontend/dist/
+frontend/build/
+# Vite / React cache
+.vite/
+# IDE / editor directories
+.vscode/
+.idea/
+*.sublime-workspace
+# OS generated files
+.DS_Store
+Thumbs.db
+# Optional local config files
+*.local
+# Optional coverage reports
+coverage/
+# Temporary files
+*.tmp
+*.swp

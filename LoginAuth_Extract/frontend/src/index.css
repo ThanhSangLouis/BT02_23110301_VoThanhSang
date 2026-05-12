@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  /* ── Auth Input ────────────────────────────────────────── */
+  .auth-input {
+    @apply w-full bg-dark-800 border border-dark-600 text-gray-100
+           rounded-xl px-4 py-3 pl-11 text-sm
+           placeholder-gray-500 outline-none
+           transition-all duration-200
+           focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20;
+  }
+  .auth-input.has-error {
+    @apply border-red-500/70 focus:border-red-500 focus:ring-red-500/20 animate-shake;
+  }
+
+  /* ── Auth Button ───────────────────────────────────────── */
+  .btn-primary {
+    @apply w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50
+           text-white font-semibold rounded-xl py-3 px-6
+           transition-all duration-200 flex items-center justify-center gap-2
+           hover:-translate-y-0.5 active:translate-y-0
+           hover:shadow-lg hover:shadow-brand-600/30;
+  }
+  .btn-secondary {
+    @apply w-full bg-transparent border border-gray-600
+           text-gray-300 font-medium rounded-xl py-3 px-6
+           transition-all duration-200 flex items-center justify-center gap-2;
+  }
+  .btn-secondary:hover {
+    @apply border-gray-500 text-white;
+  }
+
+  /* ── Auth Card ─────────────────────────────────────────── */
+  .auth-card {
+    @apply bg-dark-800 border border-dark-600 rounded-2xl p-8
+           w-full max-w-md shadow-2xl shadow-black/40 animate-slide-up;
+  }
+}

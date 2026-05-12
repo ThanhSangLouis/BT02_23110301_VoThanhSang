@@ -1,29 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Login Demo</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <meta name="description" content="BT02 – Login Auth với React, TailwindCSS, Axios, Redux" />
+    <title>LoginAuth – BT02</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <main class="container">
-      <h1>Login</h1>
-      <p class="hint">Demo frontend for JWT login flow</p>
-
-      <form id="loginForm" class="card">
-        <label for="email">Email</label>
-        <input id="email" name="email" type="email" required />
-
-        <label for="password">Password</label>
-        <input id="password" name="password" type="password" required />
-
-        <button type="submit">Login</button>
-      </form>
-
-      <p id="message" class="message"></p>
-    </main>
-
-    <script src="./login.js"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
   </body>
-  </html>
+</html>
