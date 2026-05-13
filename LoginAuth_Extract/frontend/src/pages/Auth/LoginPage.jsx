@@ -1,125 +1,93 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
 import { useAuth } from '../../hooks/useAuth';
-import AuthCard    from '../../components/AuthCard/AuthCard';
-import AuthInput   from '../../components/AuthInput/AuthInput';
-import AuthButton  from '../../components/AuthButton/AuthButton';
 
-/**
- * LoginPage – trang đăng nhập.
- * - Sử dụng useAuth() (Redux Hook) để dispatch loginUser thunk
- * - Sử dụng Axios (qua authAPI) để gọi POST /auth/login
- * - Validation phía client trước khi gửi
- */
 export default function LoginPage() {
   const { login, loading } = useAuth();
-
-  const [formData, setFormData]     = useState({ email: '', password: '' });
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors]         = useState({});
-
-  // ── Validation ─────────────────────────────────────────────────────────────
-  const validate = () => {
-    const errs = {};
-    if (!formData.email)
-      errs.email = 'Vui lòng nhập email.';
-    else if (!/\S+@\S+\.\S+/.test(formData.email))
-      errs.email = 'Email không đúng định dạng.';
-    if (!formData.password)
-      errs.password = 'Vui lòng nhập mật khẩu.';
-    return errs;
-  };
-
-  // ── Handlers ───────────────────────────────────────────────────────────────
-  const handleChange = (e) => {
-    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-    if (errors[e.target.name]) setErrors((prev) => ({ ...prev, [e.target.name]: '' }));
-  };
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const errs = validate();
-    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
-    setErrors({});
+    setError('');
+    
+    if (!formData.email || !formData.password) {
+      setError('Vui lòng nhập đầy đủ thông tin');
+      return;
+    }
+    
     await login(formData);
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12
-                    bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900">
-      <AuthCard>
-        {/* ── Header ── */}
-        <div className="text-center mb-8">
-          <div className="text-4xl mb-3">🧠</div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Chào mừng trở lại</h1>
-          <p className="text-gray-400 text-sm mt-1">Đăng nhập để tiếp tục học tập</p>
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
+      <div className="bg-white rounded-lg shadow-md p-8 w-full max-w-md">
+        <div className="text-center mb-6">
+          <h1 className="text-2xl font-bold text-blue-600 mb-2">📚 BookStore</h1>
+          <p className="text-gray-600">Đăng nhập để tiếp tục</p>
         </div>
 
-        {/* ── Form ── */}
-        <form onSubmit={handleSubmit} noValidate>
-          {/* Email */}
-          <AuthInput
-            id="login-email"
-            name="email"
-            type="email"
-            placeholder="Địa chỉ email"
-            value={formData.email}
-            onChange={handleChange}
-            icon={<FiMail size={16} />}
-            error={errors.email}
-            autoComplete="email"
-          />
+        <form onSubmit={handleSubmit}>
+          {error && (
+            <div className="bg-red-100 text-red-600 px-4 py-2 rounded mb-4 text-sm">
+              {error}
+            </div>
+          )}
 
-          {/* Password */}
-          <AuthInput
-            id="login-password"
-            name="password"
-            type={showPassword ? 'text' : 'password'}
-            placeholder="Mật khẩu"
-            value={formData.password}
-            onChange={handleChange}
-            icon={<FiLock size={16} />}
-            rightElement={
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Nhập email"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                className="w-full border rounded-lg px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Nhập mật khẩu"
+              />
               <button
                 type="button"
-                tabIndex={-1}
-                onClick={() => setShowPassword((p) => !p)}
-                className="text-gray-500 hover:text-gray-300 transition-colors p-1"
-                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
               >
-                {showPassword ? <FiEyeOff size={16} /> : <FiEye size={16} />}
+                {showPassword ? '👁️' : '👁️‍🗨️'}
               </button>
-            }
-            error={errors.password}
-            autoComplete="current-password"
-          />
+            </div>
+          </div>
 
-          {/* Forgot Password link */}
-          <div className="text-right -mt-2 mb-4">
-            <Link
-              to="/forgot-password"
-              className="text-sm text-brand-400 hover:text-brand-300 transition-colors"
-            >
+          <div className="text-right mb-4">
+            <Link to="/forgot-password" className="text-sm text-blue-600 hover:underline">
               Quên mật khẩu?
             </Link>
           </div>
 
-          {/* Submit */}
-          <AuthButton id="login-submit" loading={loading}>
-            {loading ? 'Đang đăng nhập...' : 'Đăng Nhập'}
-          </AuthButton>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
+            {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+          </button>
         </form>
 
-        {/* ── Footer ── */}
-        <p className="text-center text-sm text-gray-500 mt-6">
+        <p className="text-center text-sm text-gray-600 mt-4">
           Chưa có tài khoản?{' '}
-          <Link to="/register" className="text-brand-400 hover:text-brand-300 font-semibold transition-colors">
-            Tạo tài khoản miễn phí
+          <Link to="/register" className="text-blue-600 hover:underline">
+            Đăng ký ngay
           </Link>
         </p>
-      </AuthCard>
+      </div>
     </div>
   );
 }

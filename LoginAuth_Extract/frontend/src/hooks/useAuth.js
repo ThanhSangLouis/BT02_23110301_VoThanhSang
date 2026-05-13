@@ -31,7 +31,7 @@ export function useAuth() {
       const result = await dispatch(loginUser({ email, password }));
       if (loginUser.fulfilled.match(result)) {
         toast.success(`Chào mừng trở lại, ${result.payload?.username || 'bạn'}! 👋`);
-        navigate('/dashboard');
+        navigate('/home');
       } else {
         toast.error(result.payload || 'Đăng nhập thất bại');
       }
@@ -62,7 +62,7 @@ export function useAuth() {
       const result = await dispatch(verifyEmailOtp({ email, otp }));
       if (verifyEmailOtp.fulfilled.match(result)) {
         toast.success('Email đã xác minh! Tài khoản đã được kích hoạt.');
-        navigate('/dashboard');
+        navigate('/home');
         return true;
       } else {
         toast.error(result.payload || 'Xác minh OTP thất bại');

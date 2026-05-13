@@ -35,8 +35,12 @@ app.get('/api/health', (req, res) =>
 );
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/auth',  require('./modules/auth/auth.routes'));
-app.use('/api/users', require('./modules/user/user.routes'));
+app.use('/api/auth',        require('./modules/auth/auth.routes'));
+app.use('/api/users',       require('./modules/user/user.routes'));
+app.use('/api/categories',  require('./modules/category/category.routes'));
+app.use('/api/products',     require('./modules/product/product.routes'));
+app.use('/api/promotions',  require('./modules/promotion/promotion.routes'));
+app.use('/api/news',        require('./modules/news/news.routes'));
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use('/{*path}', (req, res) => {
