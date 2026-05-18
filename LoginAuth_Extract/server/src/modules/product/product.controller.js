@@ -182,6 +182,140 @@ const getRelatedProducts = async (req, res) => {
   res.status(200).json(ApiResponse.success(relatedProducts, 'Lấy sản phẩm tương tự thành công'));
 };
 
+// GET /api/products/top-selling - Lấy top sản phẩm bán chạy với phân trang
+const getTopSellingProducts = async (req, res) => {
+  const { page = 1, limit = 10 } = req.query;
+
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const [products, total] = await Promise.all([
+    Product.find({ isActive: true, soldQuantity: { $gt: 0 } })
+      .populate('category', 'name slug')
+      .sort({ soldQuantity: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean(),
+    Product.countDocuments({ isActive: true, soldQuantity: { $gt: 0 } }),
+  ]);
+
+  res.status(200).json(ApiResponse.success({
+    products,
+    pagination: {
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      totalPages: Math.ceil(total / Number(limit)),
+    },
+  }, 'Lấy top sản phẩm bán chạy thành công'));
+};
+
+// GET /api/products/top-viewed - Lấy top sản phẩm xem nhiều với phân trang
+const getTopViewedProducts = async (req, res) => {
+  const { page = 1, limit = 10 } = req.query;
+
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const [products, total] = await Promise.all([
+    Product.find({ isActive: true, viewCount: { $gt: 0 } })
+      .populate('category', 'name slug')
+      .sort({ viewCount: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean(),
+    Product.countDocuments({ isActive: true, viewCount: { $gt: 0 } }),
+  ]);
+
+  res.status(200).json(ApiResponse.success({
+    products,
+    pagination: {
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      totalPages: Math.ceil(total / Number(limit)),
+    },
+  }, 'Lấy top sản phẩm xem nhiều thành công'));
+};
+
+// GET /api/products/category/:categoryId - Lấy sản phẩm theo danh mục với cursor-based pagination (lazy loading)
+const getProductsByCategory = async (req, res) => {
+  const { categoryId } = req.params;
+  const { cursor, limit = 12, sortBy = 'createdAt', order = 'desc' } = req.query;
+
+  // Validate category exists
+  const category = await Category.findById(categoryId).lean();
+  if (!category) {
+    throw new AppError('Không tìm thấy danh mục', 404);
+  }
+
+  // Build query
+  const query = { isActive: true, category: categoryId };
+
+  // Cursor-based pagination for lazy loading
+  if (cursor) {
+    const cursorProduct = await Product.findById(cursor).select('createdAt').lean();
+    if (cursorProduct) {
+      if (order === 'desc') {
+        query.createdAt = { $lt: cursorProduct.createdAt };
+      } else {
+        query.createdAt = { $gt: cursorProduct.createdAt };
+      }
+    }
+  }
+
+  // Build sort
+  const sortOptions = {};
+  if (sortBy === 'price') {
+    sortOptions.price = order === 'asc' ? 1 : -1;
+  } else if (sortBy === 'soldQuantity') {
+    sortOptions.soldQuantity = -1;
+  } else {
+    sortOptions[sortBy] = order === 'asc' ? 1 : -1;
+  }
+
+  const products = await Product.find(query)
+    .populate('category', 'name slug')
+    .sort(sortOptions)
+    .limit(Number(limit) + 1) // Fetch one extra to check if there are more
+    .lean();
+
+  // Check if there are more products
+  const hasMore = products.length > Number(limit);
+  if (hasMore) {
+    products.pop(); // Remove the extra product
+  }
+
+  // Get next cursor from last product
+  const nextCursor = products.length > 0 ? products[products.length - 1]._id : null;
+
+  res.status(200).json(ApiResponse.success({
+    products,
+    pagination: {
+      limit: Number(limit),
+      hasMore,
+      nextCursor: hasMore ? nextCursor : null,
+    },
+  }, 'Lấy sản phẩm theo danh mục thành công'));
+};
+
+// POST /api/products/:id/view - Tăng lượt xem sản phẩm
+const incrementViewCount = async (req, res) => {
+  const { id } = req.params;
+
+  const product = await Product.findByIdAndUpdate(
+    id,
+    { $inc: { viewCount: 1 } },
+    { new: true, select: 'viewCount' }
+  ).lean();
+
+  if (!product) {
+    throw new AppError('Không tìm thấy sản phẩm', 404);
+  }
+
+  res.status(200).json(ApiResponse.success({
+    viewCount: product.viewCount
+  }, 'Tăng lượt xem thành công'));
+};
+
 module.exports = {
   getProducts,
   getNewProducts,
@@ -189,4 +323,8 @@ module.exports = {
   getFeaturedProducts,
   getProductBySlug,
   getRelatedProducts,
+  getTopSellingProducts,
+  getTopViewedProducts,
+  getProductsByCategory,
+  incrementViewCount,
 };

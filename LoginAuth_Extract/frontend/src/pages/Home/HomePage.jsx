@@ -9,6 +9,7 @@ import { selectUser, selectIsAuthenticated } from '../../store/slices/authSlice'
 import Layout from '../../components/Layout/Layout';
 import { productAPI } from '../../api/product.api';
 import { promotionAPI } from '../../api/promotion.api';
+import TopProductsSection from '../../components/ProductCard/TopProductsSection';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -196,6 +197,9 @@ export default function HomePage() {
             <p className="text-gray-500">Chưa có sách bán chạy</p>
           )}
         </div>
+
+        {/* Top Products Section - Sách bán chạy & Xem nhiều nhất */}
+        <TopProductsSection />
 
         {/* Nút xem tất cả */}
         <div className="text-center">

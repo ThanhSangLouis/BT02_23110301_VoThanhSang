@@ -20,6 +20,10 @@ export default function ProductDetailPage() {
         const response = await productAPI.getProductBySlug(slug);
         if (response.data?.product) {
           setProduct(response.data.product);
+          // Tăng view count (fire and forget, không block UI)
+          productAPI.incrementViewCount(response.data.product._id).catch(err => {
+            console.log('View count error:', err);
+          });
         }
       } catch (error) {
         console.error('Error:', error);

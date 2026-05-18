@@ -107,6 +107,10 @@ const ProductSchema = new Schema(
       type: Number,
       default: 0,
     },
+    viewCount: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,
@@ -129,6 +133,7 @@ ProductSchema.index({ isFeatured: 1 });
 ProductSchema.index({ isBestseller: 1 });
 ProductSchema.index({ isActive: 1 });
 ProductSchema.index({ soldQuantity: -1 });
+ProductSchema.index({ viewCount: -1 });
 ProductSchema.index({ createdAt: -1 });
 ProductSchema.index({ name: 'text', author: 'text', description: 'text' });
 

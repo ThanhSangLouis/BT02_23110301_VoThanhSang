@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import Layout from '../../components/Layout/Layout';
 import { productAPI } from '../../api/product.api';
@@ -9,12 +9,17 @@ export default function ProductsPage() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [cursor, setCursor] = useState(null);
+  const observerRef = useRef(null);
+  const loadMoreRef = useRef(null);
 
   const search = searchParams.get('search') || '';
-  const category = searchParams.get('category') || '';
+  const categorySlug = searchParams.get('category') || '';
   const sortBy = searchParams.get('sortBy') || 'createdAt';
+
+  const LIMIT = 12;
 
   // Fetch categories once
   useEffect(() => {
@@ -29,32 +34,119 @@ export default function ProductsPage() {
     fetchCategories();
   }, []);
 
-  // Fetch products when params change
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        setLoading(true);
-        const params = { page, limit: 12, sortBy };
-        
+  // Reset products when filters change
+  const resetAndFetch = useCallback(async () => {
+    try {
+      setLoading(true);
+      setHasMore(true);
+      setCursor(null);
+
+      // If category is selected, use category-specific endpoint
+      if (categorySlug) {
+        const cat = categories.find(c => c.slug === categorySlug);
+        if (cat) {
+          const response = await productAPI.getProductsByCategory(cat._id, null, LIMIT);
+          if (response.data) {
+            setProducts(response.data.products || []);
+            setHasMore(response.data.pagination?.hasMore || false);
+            setCursor(response.data.pagination?.nextCursor);
+          }
+        }
+      } else {
+        // Use general products endpoint with page-based pagination
+        const params = { page: 1, limit: LIMIT, sortBy };
         if (search) params.search = search;
-        if (category) params.category = category;
         if (searchParams.get('isNew') === 'true') params.isNew = 'true';
         if (searchParams.get('isBestseller') === 'true') params.isBestseller = 'true';
 
         const response = await productAPI.getProducts(params);
-        
         if (response.data) {
           setProducts(response.data.products || []);
-          setTotalPages(response.data.pagination?.totalPages || 1);
+          const totalPages = response.data.pagination?.totalPages || 1;
+          setHasMore(response.data.pagination?.page < totalPages);
+          setCursor(response.data.pagination?.page + 1); // For page-based
         }
-      } catch (error) {
-        console.error('Error fetching products:', error);
-      } finally {
-        setLoading(false);
+      }
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [categorySlug, categories, search, sortBy, searchParams]);
+
+  // Fetch products when filters change
+  useEffect(() => {
+    resetAndFetch();
+  }, [searchParams.toString(), resetAndFetch]);
+
+  // Load more products (for both category and general)
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+
+    try {
+      setLoadingMore(true);
+
+      if (categorySlug) {
+        // Category-based cursor pagination
+        const response = await productAPI.getProductsByCategory(
+          categories.find(c => c.slug === categorySlug)?._id,
+          cursor,
+          LIMIT
+        );
+        if (response.data) {
+          setProducts(prev => [...prev, ...(response.data.products || [])]);
+          setHasMore(response.data.pagination?.hasMore || false);
+          setCursor(response.data.pagination?.nextCursor);
+        }
+      } else {
+        // Page-based pagination
+        const params = { page: cursor, limit: LIMIT, sortBy };
+        if (search) params.search = search;
+        if (searchParams.get('isNew') === 'true') params.isNew = 'true';
+        if (searchParams.get('isBestseller') === 'true') params.isBestseller = 'true';
+
+        const response = await productAPI.getProducts(params);
+        if (response.data) {
+          setProducts(prev => [...prev, ...(response.data.products || [])]);
+          const totalPages = response.data.pagination?.totalPages || 1;
+          setHasMore(response.data.pagination?.page < totalPages);
+          setCursor(response.data.pagination?.page + 1);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading more products:', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, cursor, categorySlug, categories, search, sortBy, searchParams]);
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    if (loading) return;
+
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+    }
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (loadMoreRef.current) {
+      observerRef.current.observe(loadMoreRef.current);
+    }
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
       }
     };
-    fetchProducts();
-  }, [searchParams.toString(), page]);
+  }, [loading, hasMore, loadingMore, loadMore]);
 
   const handleFilter = (key, value) => {
     const newParams = new URLSearchParams(searchParams);
@@ -63,17 +155,15 @@ export default function ProductsPage() {
     } else {
       newParams.delete(key);
     }
-    newParams.delete('page');
     setSearchParams(newParams);
-    setPage(1);
   };
 
   const getTitle = () => {
     if (search) return `Kết quả tìm kiếm: "${search}"`;
     if (searchParams.get('isNew') === 'true') return 'Sách mới';
     if (searchParams.get('isBestseller') === 'true') return 'Sách bán chạy';
-    if (category) {
-      const cat = categories.find(c => c.slug === category);
+    if (categorySlug) {
+      const cat = categories.find(c => c.slug === categorySlug);
       return cat ? cat.name : 'Tất cả sách';
     }
     return 'Tất cả sách';
@@ -84,23 +174,40 @@ export default function ProductsPage() {
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-2xl font-bold mb-6">{getTitle()}</h1>
 
-        {/* Bộ lọc */}
+        {/* Category Tabs - Horizontal scrollable */}
+        {categories.length > 0 && (
+          <div className="mb-6 overflow-x-auto">
+            <div className="flex gap-2 pb-2 min-w-max">
+              <button
+                onClick={() => handleFilter('category', '')}
+                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition ${
+                  !categorySlug
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Tất cả
+              </button>
+              {categories.map((cat) => (
+                <button
+                  key={cat._id}
+                  onClick={() => handleFilter('category', cat.slug)}
+                  className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition ${
+                    categorySlug === cat.slug
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Filters */}
         <div className="bg-white rounded-lg p-4 mb-6 shadow-sm">
           <div className="flex flex-wrap gap-4 items-center">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">Danh mục:</label>
-              <select
-                value={category}
-                onChange={(e) => handleFilter('category', e.target.value)}
-                className="border rounded-lg px-3 py-2 text-sm"
-              >
-                <option value="">Tất cả</option>
-                {categories.map((c) => (
-                  <option key={c._id} value={c.slug}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium">Sắp xếp:</label>
               <select
@@ -115,7 +222,7 @@ export default function ProductsPage() {
               </select>
             </div>
 
-            {(category || search || searchParams.get('isNew') || searchParams.get('isBestseller')) && (
+            {(categorySlug || search || searchParams.get('isNew') || searchParams.get('isBestseller')) && (
               <button
                 onClick={() => setSearchParams({})}
                 className="text-red-600 hover:underline text-sm ml-auto"
@@ -126,7 +233,7 @@ export default function ProductsPage() {
           </div>
         </div>
 
-        {/* Kết quả */}
+        {/* Results */}
         {loading ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[...Array(8)].map((_, i) => (
@@ -136,8 +243,8 @@ export default function ProductsPage() {
         ) : products.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-gray-500 mb-4">Không tìm thấy sản phẩm nào</p>
-            <button 
-              onClick={() => setSearchParams({})} 
+            <button
+              onClick={() => setSearchParams({})}
               className="text-blue-600 hover:underline"
             >
               Xem tất cả sách
@@ -148,16 +255,16 @@ export default function ProductsPage() {
             <p className="text-gray-500 text-sm mb-4">{products.length} sản phẩm</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {products.map((p) => (
-                <Link 
-                  key={p._id} 
-                  to={`/product/${p.slug}`} 
+                <Link
+                  key={p._id}
+                  to={`/product/${p.slug}`}
                   className="bg-white rounded-lg shadow-sm hover:shadow-md overflow-hidden block transition"
                 >
                   <div className="aspect-[3/4] bg-gray-100">
-                    <img 
-                      src={p.coverImage || 'https://via.placeholder.com/300x400'} 
-                      alt={p.name} 
-                      className="w-full h-full object-cover" 
+                    <img
+                      src={p.coverImage || 'https://via.placeholder.com/300x400'}
+                      alt={p.name}
+                      className="w-full h-full object-cover"
                     />
                   </div>
                   <div className="p-3">
@@ -181,27 +288,27 @@ export default function ProductsPage() {
               ))}
             </div>
 
-            {/* Phân trang */}
-            {totalPages > 1 && (
-              <div className="flex justify-center gap-2 mt-8">
-                <button
-                  onClick={() => setPage(Math.max(1, page - 1))}
-                  disabled={page === 1}
-                  className="px-4 py-2 border rounded disabled:opacity-50 hover:bg-gray-50"
-                >
-                  ← Trước
-                </button>
-                <span className="px-4 py-2">
-                  Trang {page} / {totalPages}
-                </span>
-                <button
-                  onClick={() => setPage(Math.min(totalPages, page + 1))}
-                  disabled={page === totalPages}
-                  className="px-4 py-2 border rounded disabled:opacity-50 hover:bg-gray-50"
-                >
-                  Sau →
-                </button>
+            {/* Infinite scroll trigger */}
+            {hasMore && (
+              <div ref={loadMoreRef} className="flex justify-center py-8">
+                {loadingMore ? (
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    <span>Đang tải thêm...</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={loadMore}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                  >
+                    Xem thêm sản phẩm
+                  </button>
+                )}
               </div>
+            )}
+
+            {!hasMore && products.length > 0 && (
+              <p className="text-center text-gray-400 py-4">Đã hiển thị tất cả sản phẩm</p>
             )}
           </>
         )}
