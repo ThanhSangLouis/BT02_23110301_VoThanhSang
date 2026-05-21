@@ -1,16 +1,27 @@
-import { Link } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { Link, useNavigate } from 'react-router-dom';
+import { useSelector, useDispatch } from 'react-redux';
 import { selectUser, selectIsAuthenticated } from '../../store/slices/authSlice';
 import { useAuth } from '../../hooks/useAuth';
-import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { fetchCart } from '../../store/slices/cartSlice';
+import { FaShoppingCart, FaBox } from 'react-icons/fa';
 
 export default function Header() {
+  const dispatch = useDispatch();
   const user = useSelector(selectUser);
   const isAuthenticated = useSelector(selectIsAuthenticated);
   const { logout, loading } = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const { cart } = useSelector((state) => state.cart);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      dispatch(fetchCart());
+    }
+  }, [dispatch, isAuthenticated]);
+
+  const cartItemCount = cart?.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
 
   const handleLogout = async () => {
     await logout();
@@ -42,6 +53,20 @@ export default function Header() {
           </form>
 
           <div className="flex items-center gap-4">
+            {isAuthenticated && (
+              <Link
+                to="/cart"
+                className="relative p-2 text-gray-600 hover:text-blue-600 transition-colors"
+              >
+                <FaShoppingCart size={24} />
+                {cartItemCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium">
+                    {cartItemCount > 99 ? '99+' : cartItemCount}
+                  </span>
+                )}
+              </Link>
+            )}
+
             {isAuthenticated ? (
               <>
                 <span className="text-gray-600 text-sm">Xin chào, {user?.username}</span>
@@ -59,6 +84,20 @@ export default function Header() {
           <Link to="/home" className="hover:text-blue-600">Trang chủ</Link>
           <Link to="/products" className="hover:text-blue-600">Tất cả sách</Link>
           <Link to="/news" className="hover:text-blue-600">Tin tức</Link>
+          {isAuthenticated && (
+            <>
+              <Link to="/orders" className="hover:text-blue-600 flex items-center gap-1">
+                <FaBox size={14} />
+                Đơn hàng
+              </Link>
+              {user?.role === 'admin' && (
+                <Link to="/admin" className="text-red-600 hover:text-red-700 font-medium flex items-center gap-1">
+                  <FaBox size={14} />
+                  Quản trị
+                </Link>
+              )}
+            </>
+          )}
         </nav>
       </div>
     </header>

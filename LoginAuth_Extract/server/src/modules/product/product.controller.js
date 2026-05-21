@@ -19,16 +19,22 @@ const getProducts = async (req, res) => {
     isNew,
     isFeatured,
     isBestseller,
+    includeInactive = 'false',
   } = req.query;
 
-  // Build query
-  const query = { isActive: true };
+  // Build query - for admin page, show all products
+  const query = includeInactive === 'true' ? {} : { isActive: true };
 
-  // Filter by category slug - lookup category first to get ObjectId
+  // Filter by category - check if it's ObjectId or slug
   if (category) {
-    const cat = await Category.findOne({ slug: category }).lean();
-    if (cat) {
-      query.category = cat._id;
+    const mongoose = require('mongoose');
+    if (mongoose.Types.ObjectId.isValid(category)) {
+      query.category = new mongoose.Types.ObjectId(category);
+    } else {
+      const cat = await Category.findOne({ slug: category }).lean();
+      if (cat) {
+        query.category = cat._id;
+      }
     }
   }
 

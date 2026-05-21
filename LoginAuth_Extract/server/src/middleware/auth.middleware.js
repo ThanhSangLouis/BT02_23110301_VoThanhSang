@@ -49,4 +49,9 @@ const authorize = (...roles) => (req, res, next) => {
   next();
 };
 
-module.exports = { authenticate, authorize };
+module.exports = {
+  authenticate,
+  authorize,
+  requireAuth: authenticate,
+  requireAdmin: authorize('admin'),
+};

@@ -1,17 +1,28 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation } from 'swiper/modules';
 import 'swiper/css';
 import 'swiper/css/navigation';
+import { FaShoppingCart } from 'react-icons/fa';
 import Layout from '../../components/Layout/Layout';
 import { productAPI } from '../../api/product.api';
+import { addToCart, fetchCart } from '../../store/slices/cartSlice';
+import { selectIsAuthenticated } from '../../store/slices/authSlice';
+import toast from 'react-hot-toast';
 
 export default function ProductDetailPage() {
   const { slug } = useParams();
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
+  const [addingToCart, setAddingToCart] = useState(false);
+
+  const isAuthenticated = useSelector(selectIsAuthenticated);
+  const { loading: cartLoading } = useSelector((state) => state.cart);
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -20,7 +31,6 @@ export default function ProductDetailPage() {
         const response = await productAPI.getProductBySlug(slug);
         if (response.data?.product) {
           setProduct(response.data.product);
-          // Tăng view count (fire and forget, không block UI)
           productAPI.incrementViewCount(response.data.product._id).catch(err => {
             console.log('View count error:', err);
           });
@@ -33,6 +43,30 @@ export default function ProductDetailPage() {
     };
     fetchProduct();
   }, [slug]);
+
+  const handleAddToCart = async () => {
+    if (!isAuthenticated) {
+      toast.error('Vui lòng đăng nhập để thêm vào giỏ hàng');
+      navigate('/login');
+      return;
+    }
+
+    if (product.stockQuantity < quantity) {
+      toast.error('Số lượng vượt quá tồn kho');
+      return;
+    }
+
+    setAddingToCart(true);
+    try {
+      await dispatch(addToCart({ productId: product._id, quantity })).unwrap();
+      dispatch(fetchCart());
+      toast.success('Đã thêm vào giỏ hàng!');
+    } catch (error) {
+      toast.error(error || 'Không thể thêm vào giỏ hàng');
+    } finally {
+      setAddingToCart(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -168,9 +202,26 @@ export default function ProductDetailPage() {
             </div>
 
             {/* Nút */}
-            <button className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 mb-3">
-              Thêm vào giỏ hàng
+            <button
+              onClick={handleAddToCart}
+              disabled={addingToCart || cartLoading || product.stockQuantity < 1}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {addingToCart ? (
+                <>
+                  <span className="animate-spin">⏳</span>
+                  Đang thêm...
+                </>
+              ) : (
+                <>
+                  <FaShoppingCart />
+                  Thêm vào giỏ hàng
+                </>
+              )}
             </button>
+            {product.stockQuantity < 1 && (
+              <p className="text-center text-red-500 text-sm">Sản phẩm đã hết hàng</p>
+            )}
             
             <Link to="/products" className="block text-center text-blue-600 hover:underline">
               ← Quay lại danh sách sách
