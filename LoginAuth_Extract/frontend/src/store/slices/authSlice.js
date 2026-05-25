@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { authAPI } from '../../api/auth.api';
+import { persistUser, clearPersistedUser } from '../../api/axiosClient';
 
 // ── Async Thunks ──────────────────────────────────────────────────────────────
 
@@ -9,7 +10,9 @@ export const loadUser = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const res = await authAPI.getMe();
-      return res.data ?? res;
+      // axios unwraps response.data → res = { success, data: user }
+      // So res.data IS the user object
+      return res?.data ?? res;
     } catch (err) {
       return rejectWithValue(err.response?.data?.error?.message || 'Failed to load user');
     }
@@ -116,15 +119,15 @@ const initialState = {
 
 const authSlice = createSlice({
   name: 'auth',
-  initialState,
-  reducers: {
+  initialState, // 1. Dữ liệu ban đầu trong két
+  reducers: { // 2. Các ông thủ quỹ xử lý đơn
     clearError:  (state)         => { state.error = null; },
     resetAuth:   ()              => initialState,
-    setUser:     (state, action) => {
+    setUser:     (state, action) => { // Khi nhận đơn (action), thủ quỹ mới cập nhật két (state)
       state.user            = action.payload;
       state.isAuthenticated = true;
       state.loading         = false;
-      state.error           = null;
+      state.error           = null; 
     },
   },
   extraReducers: (builder) => {
@@ -133,6 +136,7 @@ const authSlice = createSlice({
       .addCase(loadUser.pending,   (state)          => { state.loading = true; state.error = null; })
       .addCase(loadUser.fulfilled, (state, action)  => {
         state.user = action.payload; state.isAuthenticated = true; state.loading = false;
+        persistUser(action.payload);
       })
       .addCase(loadUser.rejected,  (state)          => {
         state.user = null; state.isAuthenticated = false; state.loading = false;
@@ -144,6 +148,7 @@ const authSlice = createSlice({
       .addCase(loginUser.fulfilled, (state, action) => {
         state.user = action.payload; state.isAuthenticated = true;
         state.loading = false; state.error = null;
+        persistUser(action.payload);
       })
       .addCase(loginUser.rejected,  (state, action) => {
         state.loading = false; state.error = action.payload;
@@ -165,6 +170,7 @@ const authSlice = createSlice({
       .addCase(verifyEmailOtp.fulfilled, (state, action) => {
         state.user = action.payload; state.isAuthenticated = true;
         state.loading = false; state.error = null; state.requiresEmailVerification = false;
+        persistUser(action.payload);
       })
       .addCase(verifyEmailOtp.rejected,  (state, action) => {
         state.loading = false; state.error = action.payload;
@@ -174,6 +180,7 @@ const authSlice = createSlice({
     builder
       .addCase(logoutUser.pending,   (state) => { state.loading = true; })
       .addCase(logoutUser.fulfilled, (state) => {
+        clearPersistedUser();
         state.user = null; state.isAuthenticated = false;
         state.loading = false; state.error = null; state.requiresEmailVerification = false;
       })

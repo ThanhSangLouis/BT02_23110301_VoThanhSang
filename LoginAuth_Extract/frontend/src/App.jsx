@@ -1,21 +1,31 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { selectIsAuthenticated, selectUser, selectAuthLoading, setUser, resetAuth } from './store/slices/authSlice';
-import { useEffect, useState } from 'react';
-import { loadUser, logoutUser } from './store/slices/authSlice';
-import { loadPersistedUser, clearPersistedUser, persistUser } from './api/axiosClient';
+import {
+  selectIsAuthenticated,
+  selectUser,
+  selectAuthLoading,
+  setUser,
+  resetAuth,
+  loadUser,
+} from './store/slices/authSlice';
+import { useEffect, useState, useRef } from 'react';
+import {
+  loadPersistedUser,
+  clearPersistedUser,
+  persistUser,
+} from './api/axiosClient';
 
 // Auth Pages
-import LoginPage        from './pages/Auth/LoginPage';
-import RegisterPage     from './pages/Auth/RegisterPage';
+import LoginPage         from './pages/Auth/LoginPage';
+import RegisterPage      from './pages/Auth/RegisterPage';
 import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
-import DashboardPage    from './pages/Dashboard/DashboardPage';
+import DashboardPage     from './pages/Dashboard/DashboardPage';
 
 // Admin Pages
-import AdminLayout     from './components/AdminLayout/AdminLayout';
-import AdminOrdersPage from './pages/Admin/AdminOrdersPage';
+import AdminLayout      from './components/AdminLayout/AdminLayout';
+import AdminOrdersPage  from './pages/Admin/AdminOrdersPage';
 import AdminProductsPage from './pages/Admin/AdminProductsPage';
-import AdminUsersPage  from './pages/Admin/AdminUsersPage';
+import AdminUsersPage   from './pages/Admin/AdminUsersPage';
 
 // Cart & Order Pages
 import CartPage         from './pages/Cart/CartPage';
@@ -24,219 +34,267 @@ import OrderHistoryPage from './pages/Order/OrderHistoryPage';
 import OrderDetailPage  from './pages/Order/OrderDetailPage';
 
 // Public Pages
-import HomePage from './pages/Home/HomePage';
-import ProductsPage from './pages/Product/ProductsPage';
+import HomePage         from './pages/Home/HomePage';
+import ProductsPage     from './pages/Product/ProductsPage';
 import ProductDetailPage from './pages/Product/ProductDetailPage';
-import NewsPage from './pages/News/NewsPage';
-import NewsDetailPage from './pages/News/NewsDetailPage';
+import NewsPage         from './pages/News/NewsPage';
+import NewsDetailPage   from './pages/News/NewsDetailPage';
 
-function ProtectedRoute({ children }) {
-  const isAuthenticated = useSelector(selectIsAuthenticated);
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+// ── Loading Screen ─────────────────────────────────────────────────────────────
+function LoadingScreen({ message = 'Dang kiem tra phien dang nhap...' }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <div className="h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p className="text-gray-500 text-sm">{message}</p>
+      </div>
+    </div>
+  );
 }
 
+// ── Auth Initializer (runs at App level) ──────────────────────────────────────
+// This component initializes auth state BEFORE any route renders.
+// It reads localStorage, calls /api/users/me, persists user back,
+// and only then unblocks the route tree.
+function AuthInitializer({ children }) {
+  const dispatch  = useDispatch();
+  const [authReady, setAuthReady] = useState(false);
+  const [authResult, setAuthResult] = useState(null); // { isAuthenticated, user }
+  const initRef = useRef(false);
+
+  useEffect(() => {
+    if (initRef.current) return;
+    initRef.current = true;
+
+    const initAuth = async () => {
+      console.log('[AuthInit] Starting auth initialization...');
+
+      // Step 1: Restore user from localStorage (fast, no network)
+      const persistedUser = loadPersistedUser();
+      console.log('[AuthInit] localStorage user:', persistedUser ? 'FOUND' : 'NONE');
+      if (persistedUser) {
+        dispatch(setUser(persistedUser));
+      }
+
+      // Step 2: Validate session with server (network call)
+      // This verifies the JWT cookie is still valid
+      console.log('[AuthInit] Calling /api/users/me to validate cookie session...');
+      try {
+        const serverUser = await dispatch(loadUser()).unwrap();
+        console.log('[AuthInit] Server user loaded:', serverUser?.username, '| role:', serverUser?.role);
+
+        // Update localStorage with fresh server data
+        persistUser(serverUser);
+
+        setAuthResult({ isAuthenticated: true, user: serverUser });
+        console.log('[AuthInit] Auth VALID — user stays logged in');
+      } catch (err) {
+        console.log('[AuthInit] Server validation FAILED:', err);
+
+        if (err?.message === 'SESSION_EXPIRED') {
+          // Token refresh also failed — session truly expired
+          console.log('[AuthInit] SESSION_EXPIRED — clearing all auth data');
+          clearPersistedUser();
+          dispatch(resetAuth());
+          setAuthResult({ isAuthenticated: false, user: null });
+        } else {
+          // Network error or other — if we have persisted user, keep them logged in
+          // (server might be temporarily down but cookie is still valid)
+          if (persistedUser) {
+            console.log('[AuthInit] Network error but has localStorage user — keeping logged in');
+            setAuthResult({ isAuthenticated: true, user: persistedUser });
+          } else {
+            console.log('[AuthInit] No localStorage user — redirecting to login');
+            setAuthResult({ isAuthenticated: false, user: null });
+          }
+        }
+      } finally {
+        console.log('[AuthInit] Auth initialization complete');
+        setAuthReady(true);
+      }
+    };
+
+    initAuth();
+  }, [dispatch]);
+
+  // Still initializing — block entire app
+  if (!authReady) {
+    return <LoadingScreen />;
+  }
+
+  // Auth is ready — render the app with auth context available
+  // We pass isAuthenticated from authResult to avoid reading stale Redux state
+  return children;
+}
+
+// ── Protected Route ───────────────────────────────────────────────────────────
+function ProtectedRoute({ children }) {
+  const isAuthenticated = useSelector(selectIsAuthenticated);
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
+// ── Admin Route ────────────────────────────────────────────────────────────────
 function AdminRoute({ children }) {
   const isAuthenticated = useSelector(selectIsAuthenticated);
-  const user = useSelector(selectUser);
+  const user             = useSelector(selectUser);
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (user?.role !== 'admin') return <Navigate to="/home" replace />;
   return children;
 }
 
-// Component to handle initial route based on auth status
+// ── Initial Route (handles "/" path) ─────────────────────────────────────────
 function InitialRoute() {
-  const dispatch = useDispatch();
   const isAuthenticated = useSelector(selectIsAuthenticated);
-  const user = useSelector(selectUser);
-  const [initComplete, setInitComplete] = useState(false);
+  const user            = useSelector(selectUser);
 
-  useEffect(() => {
-    console.log('[InitialRoute] Mounted, checking auth...');
-    let cancelled = false;
-    const checkAuth = async () => {
-      const persistedUser = loadPersistedUser();
-      console.log('[InitialRoute] Persisted user:', persistedUser);
-      if (persistedUser && !cancelled) {
-        dispatch(setUser(persistedUser));
-      }
-      try {
-        console.log('[InitialRoute] Calling loadUser API...');
-        const serverUser = await dispatch(loadUser()).unwrap();
-        console.log('[InitialRoute] Server user:', serverUser);
-        if (serverUser && !cancelled) persistUser(serverUser);
-      } catch (error) {
-        console.log('[InitialRoute] loadUser error:', error);
-        if (!cancelled) {
-          const errorMsg = error?.message || error;
-          if (errorMsg === 'SESSION_EXPIRED') {
-            clearPersistedUser();
-            dispatch(resetAuth());
-          }
-        }
-      } finally {
-        if (!cancelled) setInitComplete(true);
-      }
-    };
-    checkAuth();
-    return () => { cancelled = true; };
-  }, [dispatch]);
-
-  // Still initializing - show loading
-  if (!initComplete) {
-    return <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-    </div>;
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  // Redirect admin to admin page, others to home
   if (user?.role === 'admin') {
     return <Navigate to="/admin" replace />;
   }
-
   return <Navigate to="/home" replace />;
 }
 
-export default function App() {
-  // Auth initialization is handled by InitialRoute component
-  // Session expiry events are still listened here for global logout
-
-  // Listen for SESSION_EXPIRED events from axios interceptor
+// ── Global Session-Expiry Listener ───────────────────────────────────────────
+function SessionExpiryHandler() {
   const dispatch = useDispatch();
   useEffect(() => {
     const handleSessionExpired = () => {
+      console.log('[App] SESSION_EXPIRED event received — clearing auth');
       clearPersistedUser();
       dispatch(resetAuth());
     };
-
     window.addEventListener('session-expired', handleSessionExpired);
     return () => window.removeEventListener('session-expired', handleSessionExpired);
   }, [dispatch]);
+  return null;
+}
 
+// ── App ───────────────────────────────────────────────────────────────────────
+export default function App() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Routes>
-        {/* Redirect root based on auth status */}
-        <Route path="/" element={<InitialRoute />} />
-        
-        {/* Auth Routes */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+    <AuthInitializer>
+      <SessionExpiryHandler />
+      <div className="min-h-screen bg-gray-50">
+        <Routes>
+          {/* Root "/" → redirect to /home or /admin based on role */}
+          <Route path="/" element={<InitialRoute />} />
 
-        {/* Protected Routes */}
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <DashboardPage />
-            </ProtectedRoute>
-          }
-        />
+          {/* Auth Routes (public) */}
+          <Route path="/login"            element={<LoginPage />} />
+          <Route path="/register"         element={<RegisterPage />} />
+          <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
 
-        {/* Public Routes - Only accessible when logged in */}
-        <Route
-          path="/home"
-          element={
-            <ProtectedRoute>
-              <HomePage />
-            </ProtectedRoute>
-          }
-        />
-        
-        <Route
-          path="/products"
-          element={
-            <ProtectedRoute>
-              <ProductsPage />
-            </ProtectedRoute>
-          }
-        />
-        
-        <Route
-          path="/product/:slug"
-          element={
-            <ProtectedRoute>
-              <ProductDetailPage />
-            </ProtectedRoute>
-          }
-        />
+          {/* Protected Routes */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/news"
-          element={
-            <ProtectedRoute>
-              <NewsPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/home"
+            element={
+              <ProtectedRoute>
+                <HomePage />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/news/:slug"
-          element={
-            <ProtectedRoute>
-              <NewsDetailPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/products"
+            element={
+              <ProtectedRoute>
+                <ProductsPage />
+              </ProtectedRoute>
+            }
+          />
 
-        {/* Cart & Order Routes */}
-        <Route
-          path="/cart"
-          element={
-            <ProtectedRoute>
-              <CartPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/product/:slug"
+            element={
+              <ProtectedRoute>
+                <ProductDetailPage />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/checkout"
-          element={
-            <ProtectedRoute>
-              <CheckoutPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/news"
+            element={
+              <ProtectedRoute>
+                <NewsPage />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/orders"
-          element={
-            <ProtectedRoute>
-              <OrderHistoryPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/news/:slug"
+            element={
+              <ProtectedRoute>
+                <NewsDetailPage />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/orders/:orderId"
-          element={
-            <ProtectedRoute>
-              <OrderDetailPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/cart"
+            element={
+              <ProtectedRoute>
+                <CartPage />
+              </ProtectedRoute>
+            }
+          />
 
-        {/* Admin Routes */}
-        <Route
-          path="/admin"
-          element={
-            <AdminRoute>
-              <AdminLayout />
-            </AdminRoute>
-          }
-        >
-          <Route index element={<AdminOrdersPage />} />
-          <Route path="products" element={<AdminProductsPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-        </Route>
+          <Route
+            path="/checkout"
+            element={
+              <ProtectedRoute>
+                <CheckoutPage />
+              </ProtectedRoute>
+            }
+          />
 
-        {/* Fallback */}
-        <Route path="*" element={<InitialRoute />} />
-      </Routes>
-    </div>
+          <Route
+            path="/orders"
+            element={
+              <ProtectedRoute>
+                <OrderHistoryPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/orders/:orderId"
+            element={
+              <ProtectedRoute>
+                <OrderDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Admin Routes */}
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminLayout />
+              </AdminRoute>
+            }
+          >
+            <Route index          element={<AdminOrdersPage />} />
+            <Route path="products" element={<AdminProductsPage />} />
+            <Route path="users"    element={<AdminUsersPage />} />
+          </Route>
+
+          {/* Fallback */}
+          <Route path="*" element={<InitialRoute />} />
+        </Routes>
+      </div>
+    </AuthInitializer>
   );
 }
