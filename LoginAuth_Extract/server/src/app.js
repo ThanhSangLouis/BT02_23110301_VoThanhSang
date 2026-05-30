@@ -39,9 +39,14 @@ app.use('/api/auth',        require('./modules/auth/auth.routes'));
 app.use('/api/users',       require('./modules/user/user.routes'));
 app.use('/api/categories',  require('./modules/category/category.routes'));
 app.use('/api/products',    require('./modules/product/product.routes'));
+app.use('/api/reviews',     require('./modules/review/review.routes'));
+app.use('/api/points',      require('./modules/points/points.routes'));
 app.use('/api/promotions',  require('./modules/promotion/promotion.routes'));
 app.use('/api/news',        require('./modules/news/news.routes'));
 app.use('/api/cart',        require('./modules/cart/cart.routes'));
+app.use('/api/wishlist',    require('./modules/wishlist/wishlist.routes'));
+app.use('/api/recently-viewed', require('./modules/recentlyViewed/recentlyViewed.routes'));
+app.use('/api/vouchers',    require('./modules/voucher/voucher.routes'));
 app.use('/api/orders',      require('./modules/order/order.routes'));
 app.use('/api/admin',       require('./modules/admin/admin.routes'));
 

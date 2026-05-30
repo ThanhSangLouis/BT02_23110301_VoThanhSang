@@ -118,6 +118,17 @@ const orderSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    discounts: {
+      voucherCode: { type: String, default: null },
+      voucherDiscount: { type: Number, default: 0, min: 0 },
+      pointsUsed: { type: Number, default: 0, min: 0 },
+      pointsDiscount: { type: Number, default: 0, min: 0 },
+    },
+    totalPayable: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     paymentMethod: {
       type: String,
       enum: ['COD', 'banking', 'vnpay'],
@@ -193,7 +204,8 @@ orderSchema.methods.canBeCancelledByUser = function () {
   const createdTime = new Date(this.createdAt).getTime();
   const now = Date.now();
 
-  if (this.orderStatus !== ORDER_STATUS.NEW) {
+  // User chỉ được hủy trực tiếp khi đơn còn ở NEW hoặc CONFIRMED (và còn trong 30 phút).
+  if (![ORDER_STATUS.NEW, ORDER_STATUS.CONFIRMED].includes(this.orderStatus)) {
     return false;
   }
 

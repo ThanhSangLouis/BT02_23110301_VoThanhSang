@@ -2,12 +2,13 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectUser } from '../../store/slices/authSlice';
 import { logoutUser } from '../../store/slices/authSlice';
-import { FiShoppingBag, FiUsers, FiPackage, FiLogOut } from 'react-icons/fi';
+import { FiShoppingBag, FiUsers, FiPackage, FiLogOut, FiTag } from 'react-icons/fi';
 
 const adminNavItems = [
   { to: '/admin', label: 'Đơn hàng', icon: FiShoppingBag, end: true },
   { to: '/admin/products', label: 'Sản phẩm', icon: FiPackage },
   { to: '/admin/users', label: 'Người dùng', icon: FiUsers },
+  { to: '/admin/vouchers', label: 'Voucher', icon: FiTag },
 ];
 
 export default function AdminLayout() {

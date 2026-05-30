@@ -3,6 +3,9 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useParams, Link } from 'react-router-dom';
 import { FaArrowLeft, FaBox, FaMapMarkerAlt, FaPhone, FaUser, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
 import { fetchOrderById, cancelOrder, requestOrderCancellation } from '../../store/slices/orderSlice';
+import { createReview } from '../../store/slices/reviewSlice';
+import { fetchMyPoints } from '../../store/slices/pointsSlice';
+import { loadUser } from '../../store/slices/authSlice';
 import Layout from '../../components/Layout/Layout';
 import OrderStatusTracker from '../../components/OrderStatusTracker/OrderStatusTracker';
 import toast from 'react-hot-toast';
@@ -18,12 +21,17 @@ export default function OrderDetailPage() {
   const [requestCancelReason, setRequestCancelReason] = useState('');
   const [timeRemaining, setTimeRemaining] = useState(null);
 
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewProduct, setReviewProduct] = useState(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+
   useEffect(() => {
     dispatch(fetchOrderById(orderId));
   }, [dispatch, orderId]);
 
   useEffect(() => {
-    if (!currentOrder || currentOrder.orderStatus !== 'new') {
+    if (!currentOrder || !['new', 'confirmed'].includes(currentOrder.orderStatus)) {
       setTimeRemaining(null);
       return;
     }
@@ -64,14 +72,14 @@ export default function OrderDetailPage() {
 
   const canCancel = () => {
     if (!currentOrder) return false;
-    // Có thể hủy ngay khi: đang ở trạng thái 'new' VÀ chưa hết thời gian 30 phút
-    return currentOrder.orderStatus === 'new' && timeRemaining !== null;
+    // Có thể hủy trực tiếp khi: đang ở trạng thái 'new' hoặc 'confirmed' VÀ chưa hết thời gian 30 phút
+    return ['new', 'confirmed'].includes(currentOrder.orderStatus) && timeRemaining !== null;
   };
 
   const canRequestCancel = () => {
     if (!currentOrder) return false;
-    // Chỉ có thể yêu cầu hủy khi đang vận chuyển (không cho hủy khi shop đang chuẩn bị hàng)
-    return currentOrder.orderStatus === 'shipping';
+    // Từ PREPARING trở đi thì không được hủy trực tiếp, phải gửi yêu cầu hủy
+    return ['preparing', 'shipping'].includes(currentOrder.orderStatus);
   };
 
   const handleCancel = async () => {
@@ -102,6 +110,39 @@ export default function OrderDetailPage() {
       setShowRequestCancelModal(false);
     } catch (err) {
       toast.error(err || 'Gửi yêu cầu hủy thất bại');
+    }
+  };
+
+  const handleOpenReview = (item) => {
+    setReviewProduct(item);
+    setReviewRating(5);
+    setReviewComment('');
+    setShowReviewModal(true);
+  };
+
+  const handleSubmitReview = async () => {
+    if (!reviewProduct) return;
+
+    try {
+      const result = await dispatch(
+        createReview({
+          productId: reviewProduct.productId,
+          orderId,
+          rating: reviewRating,
+          comment: reviewComment,
+        })
+      ).unwrap();
+
+      const rewardedPoints = result?.reward?.points || 0;
+      toast.success(rewardedPoints > 0 ? `Đánh giá thành công (+${rewardedPoints} điểm)` : 'Đánh giá thành công');
+
+      setShowReviewModal(false);
+      setReviewProduct(null);
+      dispatch(fetchOrderById(orderId));
+      dispatch(fetchMyPoints({ page: 1, limit: 20 }));
+      dispatch(loadUser());
+    } catch (err) {
+      toast.error(err || 'Gửi đánh giá thất bại');
     }
   };
 
@@ -161,7 +202,7 @@ export default function OrderDetailPage() {
                 <span className="font-mono font-bold text-lg">{currentOrder.orderNumber}</span>
               </div>
 
-              {currentOrder.orderStatus === 'new' && timeRemaining && (
+              {['new', 'confirmed'].includes(currentOrder.orderStatus) && timeRemaining && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                   <div className="flex items-center gap-2">
                     <FaExclamationTriangle className="text-blue-600" />
@@ -207,6 +248,17 @@ export default function OrderDetailPage() {
                           {item.subtotal.toLocaleString()}đ
                         </p>
                       </div>
+
+                      {currentOrder.orderStatus === 'delivered' && (
+                        <div className="mt-3">
+                          <button
+                            onClick={() => handleOpenReview(item)}
+                            className="px-3 py-2 text-sm border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50"
+                          >
+                            Đánh giá sản phẩm
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -221,10 +273,27 @@ export default function OrderDetailPage() {
                   <span>Phí vận chuyển</span>
                   <span>{currentOrder.shippingFee.toLocaleString()}đ</span>
                 </div>
+
+                {(currentOrder.discounts?.voucherDiscount || 0) > 0 && (
+                  <div className="flex justify-between text-green-700">
+                    <span>
+                      Giảm voucher{currentOrder.discounts?.voucherCode ? ` (${currentOrder.discounts.voucherCode})` : ''}
+                    </span>
+                    <span>-{Number(currentOrder.discounts?.voucherDiscount || 0).toLocaleString()}đ</span>
+                  </div>
+                )}
+
+                {(currentOrder.discounts?.pointsDiscount || 0) > 0 && (
+                  <div className="flex justify-between text-green-700">
+                    <span>Giảm bằng điểm</span>
+                    <span>-{Number(currentOrder.discounts?.pointsDiscount || 0).toLocaleString()}đ</span>
+                  </div>
+                )}
+
                 <div className="flex justify-between text-lg font-bold pt-2 border-t">
-                  <span>Tổng cộng</span>
+                  <span>Cần thanh toán</span>
                   <span className="text-blue-600">
-                    {currentOrder.totalAmount.toLocaleString()}đ
+                    {Number((currentOrder.totalPayable ?? currentOrder.totalAmount) || 0).toLocaleString()}đ
                   </span>
                 </div>
               </div>
@@ -364,6 +433,68 @@ export default function OrderDetailPage() {
                   Gửi yêu cầu
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {showReviewModal && reviewProduct && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Đánh giá sản phẩm</h3>
+                <button
+                  onClick={() => setShowReviewModal(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg"
+                  aria-label="Đóng"
+                >
+                  <FaTimes />
+                </button>
+              </div>
+
+              <div className="mb-3">
+                <p className="font-medium text-gray-800">{reviewProduct.name}</p>
+                <p className="text-sm text-gray-500">{reviewProduct.author}</p>
+              </div>
+
+              <label className="block text-sm font-medium text-gray-700 mb-1">Số sao</label>
+              <select
+                value={reviewRating}
+                onChange={(e) => setReviewRating(Number(e.target.value))}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none mb-4"
+              >
+                {[5, 4, 3, 2, 1].map((n) => (
+                  <option key={n} value={n}>{n} sao</option>
+                ))}
+              </select>
+
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nhận xét</label>
+              <textarea
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                placeholder="Chia sẻ cảm nhận của bạn..."
+                rows={4}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none mb-4"
+              />
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowReviewModal(false)}
+                  className="flex-1 py-2 border rounded-lg hover:bg-gray-50"
+                >
+                  Đóng
+                </button>
+                <button
+                  onClick={handleSubmitReview}
+                  disabled={loading}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Gửi đánh giá
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-500 mt-3">
+                Mỗi đơn hàng chỉ được tặng điểm thưởng đánh giá 1 lần.
+              </p>
             </div>
           </div>
         )}

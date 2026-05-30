@@ -1,5 +1,7 @@
 const Product = require('./product.model');
 const Category = require('../category/category.model');
+const { Order, ORDER_STATUS } = require('../order/order.model');
+const Review = require('../review/review.model');
 const { ApiResponse } = require('../../shared/utils/apiResponse');
 const { AppError } = require('../../shared/errors/AppError');
 
@@ -159,8 +161,20 @@ const getProductBySlug = async (req, res) => {
     .limit(6)
     .lean();
 
+  const [buyersCount, commentsCount] = await Promise.all([
+    Order.countDocuments({
+      orderStatus: ORDER_STATUS.DELIVERED,
+      'items.productId': product._id,
+    }),
+    Review.countDocuments({ productId: product._id }),
+  ]);
+
   res.status(200).json(ApiResponse.success({
-    product,
+    product: {
+      ...product,
+      buyersCount,
+      commentsCount,
+    },
     relatedProducts,
   }, 'Lấy thông tin sản phẩm thành công'));
 };

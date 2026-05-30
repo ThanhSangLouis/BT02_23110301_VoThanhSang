@@ -2,6 +2,11 @@ const { Order, ORDER_STATUS, PAYMENT_STATUS } = require('./order.model');
 const { CancellationRequest } = require('../cancellation/cancellation.model');
 const Cart = require('../cart/cart.model');
 const Product = require('../product/product.model');
+const Voucher = require('../voucher/voucher.model');
+const VoucherRedemption = require('../voucher/voucherRedemption.model');
+const VoucherController = require('../voucher/voucher.controller');
+const { PointLedger, POINT_LEDGER_TYPE } = require('../points/points.model');
+const User = require('../user/user.model');
 const { ApiResponse } = require('../../shared/utils/apiResponse');
 const AppError = require('../../shared/errors/AppError');
 
@@ -42,7 +47,7 @@ const cancelScheduledJob = (orderId) => {
 };
 
 const createOrder = async (req, res) => {
-  const { shippingInfo, paymentMethod = 'COD' } = req.body;
+  const { shippingInfo, paymentMethod = 'COD', voucherCode = null, pointsToUse = 0 } = req.body;
   const userId = req.user._id;
 
   if (!shippingInfo || !shippingInfo.fullName || !shippingInfo.phone || !shippingInfo.address) {
@@ -106,6 +111,49 @@ const createOrder = async (req, res) => {
   const shippingFee = SHIPPING_FEE;
   const totalAmount = subtotal + shippingFee;
 
+  // Voucher (order-level, applied on order total excluding shipping) => use subtotal
+  let appliedVoucherCode = null;
+  let voucherDiscount = 0;
+  let voucherId = null;
+
+  if (voucherCode) {
+    const normalized = String(voucherCode).trim().toUpperCase();
+    const voucher = await Voucher.findOne({ code: normalized });
+    if (!voucher) throw new AppError('Voucher không tồn tại', 400);
+
+    const now = new Date();
+    if (!voucher.isActive) throw new AppError('Voucher không hợp lệ', 400);
+    if (voucher.startDate && now < new Date(voucher.startDate)) throw new AppError('Voucher chưa bắt đầu', 400);
+    if (voucher.endDate && now > new Date(voucher.endDate)) throw new AppError('Voucher đã hết hạn', 400);
+
+    if (voucher.usageLimitTotal != null && voucher.usedCount >= voucher.usageLimitTotal) {
+      throw new AppError('Voucher đã hết lượt sử dụng', 400);
+    }
+
+    const usedByUser = await VoucherRedemption.countDocuments({ voucherId: voucher._id, userId });
+    if (voucher.usageLimitPerUser != null && usedByUser >= voucher.usageLimitPerUser) {
+      throw new AppError('Bạn đã dùng voucher này đủ số lần', 400);
+    }
+
+    const tier = VoucherController.pickBestTier(voucher.tiers, subtotal);
+    if (!tier) throw new AppError('Đơn hàng chưa đạt điều kiện áp dụng voucher', 400);
+
+    voucherDiscount = VoucherController.calcDiscountAmount(tier, subtotal);
+    appliedVoucherCode = voucher.code;
+    voucherId = voucher._id;
+  }
+
+  // Points (1 point = 1 VND). Cap = totalAmount - shippingFee => subtotal after voucher? apply after voucher.
+  const user = await User.findById(userId).select('pointsBalance').lean();
+  const balance = user?.pointsBalance || 0;
+  const requestedPoints = Math.max(0, Math.floor(Number(pointsToUse) || 0));
+
+  const maxPointsAllowed = Math.max(0, Math.floor(subtotal - voucherDiscount));
+  const pointsUsed = Math.min(requestedPoints, balance, maxPointsAllowed);
+  const pointsDiscount = pointsUsed;
+
+  const totalPayable = Math.max(0, totalAmount - voucherDiscount - pointsDiscount);
+
   const orderNumber = await Order.generateOrderNumber();
 
   const order = new Order({
@@ -116,6 +164,13 @@ const createOrder = async (req, res) => {
     subtotal,
     shippingFee,
     totalAmount,
+    discounts: {
+      voucherCode: appliedVoucherCode,
+      voucherDiscount,
+      pointsUsed,
+      pointsDiscount,
+    },
+    totalPayable,
     paymentMethod,
     paymentStatus: PAYMENT_STATUS.PENDING,
     orderStatus: ORDER_STATUS.NEW,
@@ -129,6 +184,24 @@ const createOrder = async (req, res) => {
   });
 
   await order.save();
+
+  // Apply voucher usage after order created
+  if (voucherId) {
+    await VoucherRedemption.create({ voucherId, userId, orderId: order._id });
+    await Voucher.findByIdAndUpdate(voucherId, { $inc: { usedCount: 1 } });
+  }
+
+  // Spend points immediately, ledger entry + decrement balance
+  if (pointsUsed > 0) {
+    await PointLedger.create({
+      userId,
+      type: POINT_LEDGER_TYPE.SPEND_ORDER,
+      points: -pointsUsed,
+      refType: 'order',
+      refId: order._id,
+    });
+    await User.findByIdAndUpdate(userId, { $inc: { pointsBalance: -pointsUsed } });
+  }
 
   for (const item of validItems) {
     await Product.findByIdAndUpdate(item.productId, {
@@ -232,7 +305,7 @@ const cancelOrder = async (req, res) => {
 
   if (!order.canBeCancelledByUser()) {
     throw new AppError(
-      'Không thể hủy đơn hàng. Bạn chỉ có thể hủy trong vòng 30 phút kể từ khi đặt hàng và khi đơn hàng còn ở trạng thái mới.',
+      'Không thể hủy đơn hàng. Bạn chỉ có thể hủy trực tiếp trong vòng 30 phút kể từ khi đặt hàng và khi đơn hàng còn ở trạng thái mới hoặc đã xác nhận.',
       400
     );
   }
@@ -318,8 +391,8 @@ const updateOrderStatus = async (req, res) => {
   const validTransitions = {
     [ORDER_STATUS.NEW]: [ORDER_STATUS.CONFIRMED, ORDER_STATUS.CANCELLED],
     [ORDER_STATUS.CONFIRMED]: [ORDER_STATUS.PREPARING, ORDER_STATUS.CANCELLED],
-    [ORDER_STATUS.PREPARING]: [ORDER_STATUS.SHIPPING, ORDER_STATUS.CANCELLED],
-    [ORDER_STATUS.SHIPPING]: [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED],
+    [ORDER_STATUS.PREPARING]: [ORDER_STATUS.SHIPPING],
+    [ORDER_STATUS.SHIPPING]: [ORDER_STATUS.DELIVERED],
     [ORDER_STATUS.DELIVERED]: [],
     [ORDER_STATUS.CANCELLED]: [],
   };
@@ -360,6 +433,16 @@ const updateOrderStatus = async (req, res) => {
 
   if (status === ORDER_STATUS.DELIVERED) {
     order.actualDelivery = new Date();
+
+    // COD: coi như thanh toán thành công khi giao hàng thành công
+    if (order.paymentMethod === 'COD') {
+      order.paymentStatus = PAYMENT_STATUS.PAID;
+    }
+  }
+
+  // Nếu shop hủy trước khi giao (COD) thì đánh dấu failed
+  if (status === ORDER_STATUS.CANCELLED && order.paymentMethod === 'COD') {
+    order.paymentStatus = PAYMENT_STATUS.FAILED;
   }
 
   cancelScheduledJob(orderId);

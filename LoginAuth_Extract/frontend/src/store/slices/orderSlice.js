@@ -16,9 +16,9 @@ const initialState = {
 
 export const createOrder = createAsyncThunk(
   'order/createOrder',
-  async ({ shippingInfo, paymentMethod = 'COD' }, { rejectWithValue }) => {
+  async ({ shippingInfo, paymentMethod = 'COD', voucherCode = null, pointsToUse = 0 }, { rejectWithValue }) => {
     try {
-      const response = await orderAPI.createOrder({ shippingInfo, paymentMethod });
+      const response = await orderAPI.createOrder({ shippingInfo, paymentMethod, voucherCode, pointsToUse });
       return response.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.error?.message || 'Lỗi khi tạo đơn hàng');

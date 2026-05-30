@@ -12,6 +12,14 @@ const adminAPI = {
     return axiosClient.patch(`/admin/orders/${id}/status`, data);
   },
 
+  // Cancellation requests (handled by /orders routes, but admin can access)
+  getCancellationRequests: async (params = {}) => {
+    return axiosClient.get('/orders/cancellation-requests', { params });
+  },
+  processCancellationRequest: async (requestId, data) => {
+    return axiosClient.post(`/orders/cancellation-requests/${requestId}/process`, data);
+  },
+
   // Products
   getProducts: async (params = {}) => {
     return axiosClient.get('/admin/products', { params });

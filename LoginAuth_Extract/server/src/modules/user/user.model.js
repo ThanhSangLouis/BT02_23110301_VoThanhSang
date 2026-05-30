@@ -27,6 +27,11 @@ const UserSchema = new Schema(
       minlength: [8, 'Password must be at least 8 characters'],
       select: false, // never return password in queries by default
     },
+    pointsBalance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     role: {
       type: String,
       enum: ['admin', 'customer'],

@@ -4,6 +4,7 @@ import { selectUser, selectIsAuthenticated } from '../../store/slices/authSlice'
 import { useAuth } from '../../hooks/useAuth';
 import { useState, useEffect } from 'react';
 import { fetchCart } from '../../store/slices/cartSlice';
+import { fetchMyPoints } from '../../store/slices/pointsSlice';
 import { FaShoppingCart, FaBox } from 'react-icons/fa';
 
 export default function Header() {
@@ -14,10 +15,12 @@ export default function Header() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const { cart } = useSelector((state) => state.cart);
+  const pointsBalance = useSelector((state) => state.points.pointsBalance);
 
   useEffect(() => {
     if (isAuthenticated) {
       dispatch(fetchCart());
+      dispatch(fetchMyPoints({ page: 1, limit: 1 }));
     }
   }, [dispatch, isAuthenticated]);
 
@@ -69,7 +72,14 @@ export default function Header() {
 
             {isAuthenticated ? (
               <>
-                <span className="text-gray-600 text-sm">Xin chào, {user?.username}</span>
+                <div className="text-gray-600 text-sm">
+                  <p>Xin chào, <span className="font-medium">{user?.username}</span></p>
+                  <p className="text-xs text-gray-500">
+                    Điểm tích lũy: <span className="font-semibold text-blue-600">{Number(pointsBalance || 0).toLocaleString()}</span>
+                    {' '}•{' '}
+                    <Link to="/points" className="text-blue-600 hover:underline">Xem</Link>
+                  </p>
+                </div>
                 <button onClick={handleLogout} disabled={loading} className="text-blue-600 hover:underline text-sm">
                   Đăng xuất
                 </button>
@@ -90,6 +100,8 @@ export default function Header() {
                 <FaBox size={14} />
                 Đơn hàng
               </Link>
+              <Link to="/wishlist" className="hover:text-blue-600">Yêu thích</Link>
+              <Link to="/recently-viewed" className="hover:text-blue-600">Đã xem</Link>
               {user?.role === 'admin' && (
                 <Link to="/admin" className="text-red-600 hover:text-red-700 font-medium flex items-center gap-1">
                   <FaBox size={14} />

@@ -4,6 +4,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { FaArrowLeft, FaTruck, FaMoneyBillWave } from 'react-icons/fa';
 import { fetchCart } from '../../store/slices/cartSlice';
 import { createOrder } from '../../store/slices/orderSlice';
+import { validateVoucher, clearVoucher } from '../../store/slices/voucherSlice';
+import { fetchMyPoints } from '../../store/slices/pointsSlice';
 import Layout from '../../components/Layout/Layout';
 import toast from 'react-hot-toast';
 
@@ -12,6 +14,12 @@ export default function CheckoutPage() {
   const navigate = useNavigate();
   const { cart, summary, loading: cartLoading } = useSelector((state) => state.cart);
   const { currentOrder, loading: orderLoading, error } = useSelector((state) => state.order);
+  const voucher = useSelector((state) => state.voucher.applied);
+  const voucherLoading = useSelector((state) => state.voucher.loading);
+  const pointsBalance = useSelector((state) => state.points.pointsBalance);
+
+  const [voucherCode, setVoucherCode] = useState('');
+  const [pointsToUse, setPointsToUse] = useState(0);
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -24,6 +32,7 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     dispatch(fetchCart());
+    dispatch(fetchMyPoints({ page: 1, limit: 1 }));
   }, [dispatch]);
 
   useEffect(() => {
@@ -85,14 +94,29 @@ export default function CheckoutPage() {
             note: formData.note,
           },
           paymentMethod: 'COD',
+          voucherCode: voucher?.code || null,
+          pointsToUse: normalizedPointsToUse,
         })
       ).unwrap();
+
+      // Đồng bộ ngay số điểm trên account sau khi trừ điểm
+      dispatch(loadUser());
     } catch (err) {
-      toast.error(err || 'Đặt hàng thất bại');
+      const message = err?.message || err?.toString?.() || 'Đặt hàng thất bại';
+      toast.error(message);
     }
   };
 
   const selectedItems = cart?.items?.filter((item) => item.selected) || [];
+
+  const subtotal = selectedItems.reduce((sum, it) => sum + (it.price || 0) * (it.quantity || 0), 0);
+  const shippingFee = 30000;
+  const voucherDiscount = voucher?.discountAmount || 0;
+  const maxPointsAllowed = Math.max(0, Math.floor(subtotal - voucherDiscount));
+  const normalizedPointsToUse = Math.max(0, Math.min(Math.floor(Number(pointsToUse) || 0), Math.floor(pointsBalance || 0), maxPointsAllowed));
+  const pointsDiscount = normalizedPointsToUse;
+  const totalAmount = subtotal + shippingFee;
+  const totalPayable = Math.max(0, totalAmount - voucherDiscount - pointsDiscount);
 
   if (cartLoading && !cart) {
     return (
@@ -232,6 +256,91 @@ export default function CheckoutPage() {
               <div className="bg-white rounded-lg shadow-sm p-6">
                 <div className="flex items-center gap-2 mb-4">
                   <FaMoneyBillWave className="text-blue-600" />
+                  <h2 className="text-lg font-semibold">Voucher & Điểm</h2>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mã voucher</label>
+                    <div className="flex gap-2">
+                      <input
+                        value={voucherCode}
+                        onChange={(e) => setVoucherCode(e.target.value)}
+                        placeholder="VD: SAVE10"
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const code = voucherCode.trim();
+                          if (!code) {
+                            toast.error('Vui lòng nhập mã voucher');
+                            return;
+                          }
+                          try {
+                            await dispatch(validateVoucher({ code, orderSubtotal: subtotal })).unwrap();
+                            toast.success('Áp dụng voucher thành công');
+                          } catch (e) {
+                            toast.error(e || 'Voucher không hợp lệ');
+                          }
+                        }}
+                        disabled={voucherLoading}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300"
+                      >
+                        {voucherLoading ? 'Đang kiểm tra...' : 'Áp dụng'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          dispatch(clearVoucher());
+                          setVoucherCode('');
+                          toast.success('Đã bỏ voucher');
+                        }}
+                        disabled={!voucher}
+                        className="px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Bỏ
+                      </button>
+                    </div>
+                    {voucher && (
+                      <p className="text-sm text-green-700 mt-1">
+                        Đã áp dụng: <span className="font-semibold">{voucher.code}</span> (giảm {voucher.discountAmount.toLocaleString()}đ)
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Dùng điểm (1 điểm = 1đ)</label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={pointsToUse}
+                        onChange={(e) => setPointsToUse(e.target.value)}
+                        className="px-4 py-2 border border-gray-300 rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPointsToUse(maxPointsAllowed)}
+                        className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                      >
+                        Dùng tối đa ({maxPointsAllowed.toLocaleString()})
+                      </button>
+                      <div className="px-4 py-2 bg-gray-50 rounded-lg text-sm text-gray-600 flex items-center justify-between">
+                        <span>Điểm hiện có</span>
+                        <span className="font-semibold">{Number(pointsBalance || 0).toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Tối đa được dùng: min(điểm bạn có, tạm tính - giảm voucher). Không dùng điểm để trừ phí ship.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow-sm p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <FaMoneyBillWave className="text-blue-600" />
                   <h2 className="text-lg font-semibold">Phương thức thanh toán</h2>
                 </div>
 
@@ -278,19 +387,31 @@ export default function CheckoutPage() {
                 <div className="space-y-2 py-4 border-b">
                   <div className="flex justify-between text-gray-600 text-sm">
                     <span>Tạm tính</span>
-                    <span>{summary.subtotal.toLocaleString()}đ</span>
+                    <span>{subtotal.toLocaleString()}đ</span>
                   </div>
                   <div className="flex justify-between text-gray-600 text-sm">
                     <span>Phí vận chuyển</span>
-                    <span>{summary.shippingFee.toLocaleString()}đ</span>
+                    <span>{shippingFee.toLocaleString()}đ</span>
                   </div>
+                  {voucherDiscount > 0 && (
+                    <div className="flex justify-between text-green-700 text-sm">
+                      <span>Giảm voucher</span>
+                      <span>-{voucherDiscount.toLocaleString()}đ</span>
+                    </div>
+                  )}
+                  {pointsDiscount > 0 && (
+                    <div className="flex justify-between text-green-700 text-sm">
+                      <span>Giảm bằng điểm</span>
+                      <span>-{pointsDiscount.toLocaleString()}đ</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="py-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-lg font-semibold">Tổng cộng</span>
+                    <span className="text-lg font-semibold">Cần thanh toán</span>
                     <span className="text-xl font-bold text-blue-600">
-                      {summary.total.toLocaleString()}đ
+                      {totalPayable.toLocaleString()}đ
                     </span>
                   </div>
                 </div>

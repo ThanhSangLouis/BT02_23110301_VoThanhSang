@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import adminAPI from '../../api/admin.api';
 import toast from 'react-hot-toast';
-import { FiSearch, FiFilter, FiEye, FiCheck, FiX } from 'react-icons/fi';
+import { FiSearch, FiFilter, FiEye, FiCheck, FiX, FiThumbsUp, FiThumbsDown } from 'react-icons/fi';
 
 const statusLabels = {
   new: { label: 'Mới', color: 'bg-blue-100 text-blue-700' },
@@ -24,6 +24,10 @@ export default function AdminOrdersPage() {
   const [filter, setFilter] = useState({ status: '', search: '' });
   const [showModal, setShowModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+
+  const [cancellationRequest, setCancellationRequest] = useState(null);
+  const [requestLoading, setRequestLoading] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
 
   useEffect(() => {
     fetchOrders();
@@ -56,13 +60,54 @@ export default function AdminOrdersPage() {
       toast.success('Cập nhật trạng thái thành công');
       fetchOrders();
     } catch (error) {
-      toast.error('Cập nhật thất bại');
+      toast.error(error?.response?.data?.error?.message || 'Cập nhật thất bại');
     }
   };
 
-  const viewOrder = (order) => {
+  const fetchCancellationRequestForOrder = async (orderId) => {
+    try {
+      const data = await adminAPI.getCancellationRequests({ status: 'pending' });
+      const requests = data?.data?.requests || data?.requests || data?.data || [];
+      const match = Array.isArray(requests)
+        ? requests.find((r) => r?.orderId?._id === orderId || r?.orderId === orderId)
+        : null;
+      setCancellationRequest(match || null);
+      setRejectReason('');
+    } catch (e) {
+      setCancellationRequest(null);
+    }
+  };
+
+  const viewOrder = async (order) => {
     setSelectedOrder(order);
     setShowModal(true);
+    await fetchCancellationRequestForOrder(order._id);
+  };
+
+  const handleProcessCancellation = async ({ approved }) => {
+    if (!cancellationRequest?._id) return;
+
+    if (!approved && !rejectReason.trim()) {
+      toast.error('Vui lòng nhập lý do từ chối');
+      return;
+    }
+
+    try {
+      setRequestLoading(true);
+      await adminAPI.processCancellationRequest(cancellationRequest._id, {
+        approved,
+        shopResponse: approved ? 'Đã duyệt yêu cầu hủy' : rejectReason,
+      });
+
+      toast.success(approved ? 'Đã duyệt yêu cầu hủy' : 'Đã từ chối yêu cầu hủy');
+      await fetchOrders();
+      await fetchCancellationRequestForOrder(selectedOrder._id);
+      setShowModal(false);
+    } catch (e) {
+      toast.error(e?.response?.data?.error?.message || 'Xử lý yêu cầu hủy thất bại');
+    } finally {
+      setRequestLoading(false);
+    }
   };
 
   return (
@@ -139,7 +184,7 @@ export default function AdminOrdersPage() {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm">{order.items?.length || 0}</td>
-                    <td className="py-3 px-4 text-sm font-medium">{order.totalAmount?.toLocaleString()}đ</td>
+                    <td className="py-3 px-4 text-sm font-medium">{(order.totalPayable ?? order.totalAmount)?.toLocaleString()}đ</td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusLabels[order.orderStatus]?.color}`}>
                         {statusLabels[order.orderStatus]?.label}
@@ -187,6 +232,54 @@ export default function AdminOrdersPage() {
               </button>
             </div>
             <div className="p-6 space-y-6">
+              {cancellationRequest && cancellationRequest.status === 'pending' && (
+                <div className="border border-orange-200 bg-orange-50 rounded-lg p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-orange-800">Khách hàng yêu cầu hủy đơn</p>
+                      <p className="text-sm text-orange-700 mt-1">
+                        Lý do: <span className="font-medium">{cancellationRequest.reason}</span>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        disabled={requestLoading}
+                        onClick={() => handleProcessCancellation({ approved: true })}
+                        className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                        title="Duyệt"
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <FiThumbsUp /> Duyệt
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-orange-900 mb-1">
+                      Lý do từ chối (nếu từ chối)
+                    </label>
+                    <input
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      placeholder="Nhập lý do từ chối..."
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                    />
+                    <div className="mt-2">
+                      <button
+                        disabled={requestLoading}
+                        onClick={() => handleProcessCancellation({ approved: false })}
+                        className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <FiThumbsDown /> Từ chối
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-500">Mã đơn hàng</p>
@@ -250,9 +343,24 @@ export default function AdminOrdersPage() {
                   <span>Phí vận chuyển</span>
                   <span>{selectedOrder.shippingFee?.toLocaleString()}đ</span>
                 </div>
+
+                {(selectedOrder.discounts?.voucherDiscount || 0) > 0 && (
+                  <div className="flex justify-between text-green-700">
+                    <span>Giảm voucher{selectedOrder.discounts?.voucherCode ? ` (${selectedOrder.discounts.voucherCode})` : ''}</span>
+                    <span>-{Number(selectedOrder.discounts?.voucherDiscount || 0).toLocaleString()}đ</span>
+                  </div>
+                )}
+
+                {(selectedOrder.discounts?.pointsDiscount || 0) > 0 && (
+                  <div className="flex justify-between text-green-700">
+                    <span>Giảm bằng điểm</span>
+                    <span>-{Number(selectedOrder.discounts?.pointsDiscount || 0).toLocaleString()}đ</span>
+                  </div>
+                )}
+
                 <div className="flex justify-between font-bold text-lg">
-                  <span>Tổng cộng</span>
-                  <span className="text-blue-600">{selectedOrder.totalAmount?.toLocaleString()}đ</span>
+                  <span>Cần thanh toán</span>
+                  <span className="text-blue-600">{Number((selectedOrder.totalPayable ?? selectedOrder.totalAmount) || 0).toLocaleString()}đ</span>
                 </div>
               </div>
             </div>
@@ -263,7 +371,7 @@ export default function AdminOrdersPage() {
               >
                 Đóng
               </button>
-              {nextStatus[selectedOrder.orderStatus] && (
+              {nextStatus[selectedOrder.orderStatus] && !cancellationRequest && (
                 <button
                   onClick={() => {
                     handleUpdateStatus(selectedOrder._id, nextStatus[selectedOrder.orderStatus]);
